@@ -229,6 +229,7 @@ jobs:
           }
 
       - name: Build single-exe
+        id: pack
         run: pnpm exec tsx scripts/build-exe-for-python-sdk.ts --targets=${{ matrix.target }}
 
       - name: Resolve platform outputs
@@ -252,6 +253,7 @@ jobs:
           esac
           if [ "${RUNNER_OS}" = Windows ]; then
             [ -f "$exe" ] || { echo "::error::$exe missing"; exit 1; }
+            exe="$(cygpath -m "$exe")"
           else
             [ -x "$exe" ] || { echo "::error::$exe missing or not executable"; exit 1; }
           fi
@@ -260,11 +262,28 @@ jobs:
           echo "wheel=$wheel" >> "$GITHUB_OUTPUT"
           echo "exe_name=$(basename "$exe")" >> "$GITHUB_OUTPUT"
 
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.pack.outcome == 'success'
+        with:
+          name: ${{ steps.runtime.outputs.exe_name }}
+          path: ${{ steps.runtime.outputs.exe }}
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Full-turn SDK, executable snapshot, and direct-binary smoke
+        if: runner.os != 'Windows'
         run: >-
           uv run --python 3.10 --group test --project python/sdk
           python scripts/smoke-python-runtime.py
           --scenario all
+          --exe "${{ steps.runtime.outputs.exe }}"
+
+      - name: Direct-binary smoke (Windows)
+        if: runner.os == 'Windows'
+        run: >-
+          uv run --python 3.10 --group test --project python/sdk
+          python scripts/smoke-python-runtime.py
+          --scenario direct
           --exe "${{ steps.runtime.outputs.exe }}"
 
       - name: Build release-shaped runtime wheel
@@ -339,12 +358,5 @@ jobs:
         with:
           name: ${{ steps.runtime.outputs.wheel }}
           path: dist-python/${{ steps.runtime.outputs.wheel }}
-          if-no-files-found: error
-          retention-days: 7
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.runtime.outputs.exe_name }}
-          path: ${{ steps.runtime.outputs.exe }}
           if-no-files-found: error
           retention-days: 7
