@@ -47,9 +47,10 @@ const ASSET_GLOBS = [
   'node_modules/**/*.json',
   'node_modules/**/*.node',
   'node_modules/**/*.wasm',
+  'node_modules/**/*.dll',
 ]
 
-const PLATFORMS = ['linux', 'macos'] as const
+const PLATFORMS = ['linux', 'macos', 'win'] as const
 const ARCHES = ['x64', 'arm64'] as const
 type Platform = (typeof PLATFORMS)[number]
 type Arch = (typeof ARCHES)[number]
@@ -70,8 +71,7 @@ class Target {
     /** pkg Node range (`node<major>`). */
     readonly nodeRange: string,
     /**
-     * pkg platform tag. Windows is a documented non-goal
-     * (.agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md).
+     * pkg platform tag (`linux`, `macos`, or `win`).
      */
     readonly platform: Platform,
     /** pkg CPU tag. */
@@ -111,7 +111,7 @@ class Target {
    * @returns the host target; throws on an unsupported host platform or arch.
    */
   static host(): Target {
-    const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : undefined
+    const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : process.platform === 'win32' ? 'win' : undefined
     if (platform === undefined) {
       throw new Error(`build-exe-for-python-sdk: unsupported host platform ${process.platform}; pass --targets explicitly.`)
     }
@@ -186,7 +186,7 @@ class BuildCli {
     return [
       'Usage: pnpm exec tsx scripts/build-exe-for-python-sdk.ts [flags]',
       '',
-      '  --targets=<t1,t2,...>  pkg targets, e.g. node24-linux-x64,node24-linux-arm64,node24-macos-arm64.',
+      '  --targets=<t1,t2,...>  pkg targets, e.g. node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-win-x64.',
       '                         Default: the host platform only (on node24).',
       '  --skip-build           skip `pnpm run build` (lib/ artifacts must already exist).',
       '  --dry-run              print every command and config patch without executing.',
@@ -305,7 +305,7 @@ class SingleExeBuild {
     const stillMissing = Object.keys(manifest.dependencies ?? {})
       .filter(dependency => !existsSync(join(this.staging, 'node_modules', dependency)))
     if (stillMissing.length > 0) {
-      throw new Error(`build-exe-for-python-sdk: staged dependencies remain missing: ${stillMissing.join(', ')}.`)
+      throw new Error(`build-exe-for-python-sdk: staged dependencies remain missing: ${stillMissing.join(', ')}. `)
     }
     if (restored.length > 0) {
       console.log(`build-exe-for-python-sdk: restored legacy deploy hoists: ${restored.join(', ')}`)
@@ -380,7 +380,7 @@ class SingleExeBuild {
    * @returns the executable path and, on macOS, its helper path.
    */
   async pack(target: Target): Promise<string[]> {
-    const product = join(this.outDir, `${OUTPUT_BASENAME}-${target.platform}-${target.arch}`)
+    const product = join(this.outDir, `${OUTPUT_BASENAME}-${target.platform}-${target.arch}${target.platform === 'win' ? '.exe' : ''}`)
     await this.prepareNativePty(target)
     if (!this.cli.dryRun) await mkdir(this.outDir, { recursive: true })
     await this.run(`pkg ${target.spec}`, pnpmBin(), [
@@ -393,10 +393,13 @@ class SingleExeBuild {
       '--output',
       product,
     ])
-    if (!this.cli.dryRun && !existsSync(product)) {
-      throw new Error(`build-exe-for-python-sdk: product ${product} is missing after the pkg run; inspect ${this.outDir}.`)
+    let packed = product
+    if (!this.cli.dryRun && !existsSync(packed)) {
+      // pkg may append .exe even when --output already includes it.
+      if (existsSync(`${product}.exe`)) packed = `${product}.exe`
+      else throw new Error(`build-exe-for-python-sdk: product ${product} is missing after the pkg run; inspect ${this.outDir}.`)
     }
-    if (target.platform !== 'macos') return [product]
+    if (target.platform !== 'macos') return [packed]
     const spawnHelper = `${product}-spawn-helper`
     const source = join(this.staging, 'node_modules', 'node-pty', 'prebuilds', `darwin-${target.arch}`, 'spawn-helper')
     if (this.cli.dryRun) {
@@ -491,6 +494,8 @@ class SingleExeBuild {
       const child = spawn(command, args, {
         cwd: root,
         stdio: 'inherit',
+        // .cmd shims on Windows require a shell; unix stays direct spawn.
+        shell: process.platform === 'win32',
         // Artifact builds must not mutate or validate a developer's Git hooks.
         env: { ...process.env, CI: 'true' },
       })
