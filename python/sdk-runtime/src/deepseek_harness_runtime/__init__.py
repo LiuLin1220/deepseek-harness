@@ -4,8 +4,8 @@ Two runtime carriers coexist under ``runtime/``, both injected by the repo's
 ``scripts/build-exe-for-python-sdk.ts`` build (neither is checked into git):
 
 - **exe (production)**: single-file Node executables named
-  ``dsh-jsonrpc-agent-pkg-<platform>-<arch>`` (platform in {linux, macos}, arch in
-  {x64, arm64}); macOS also uses a sibling ``-spawn-helper``. The target machine
+  ``dsh-jsonrpc-agent-pkg-<platform>-<arch>`` (platform in {linux, macos, win}, arch in
+  {x64, arm64}; Windows is ``.exe`` on x64); macOS also uses a sibling ``-spawn-helper``. The target machine
   needs no Node installation.
 - **node (dev-only)**: the full deploy closure under ``runtime/node/``
   (``package.json`` + ``node_modules/``), executed as ``node
@@ -31,7 +31,7 @@ PACKAGE_METADATA_FILENAME = "deepseek-harness-runtime.json"
 
 RUNTIME_MODE_ENV_VAR = "DSH_RUNTIME_MODE"
 
-_PLATFORM_TAGS = {"linux": "linux", "darwin": "macos"}
+_PLATFORM_TAGS = {"linux": "linux", "darwin": "macos", "win32": "win"}
 _ARCH_TAGS = {"x86_64": "x64", "amd64": "x64", "arm64": "arm64", "aarch64": "arm64"}
 
 _EXE_ACQUISITION_HINT = (
@@ -77,7 +77,8 @@ def bundled_runtime_path() -> Path:
     can replace it without touching callers).
     """
     tag = _current_platform_tag()
-    path = bundled_package_dir() / "runtime" / f"dsh-jsonrpc-agent-pkg-{tag}"
+    name = f"dsh-jsonrpc-agent-pkg-{tag}.exe" if tag.startswith("win-") else f"dsh-jsonrpc-agent-pkg-{tag}"
+    path = bundled_package_dir() / "runtime" / name
     if not path.is_file():
         raise FileNotFoundError(
             f"deepseek-harness-runtime-bin is missing the runtime executable at {path}. "
@@ -123,7 +124,7 @@ def _current_platform_tag() -> str:
         raise FileNotFoundError(
             "no bundled dsh-jsonrpc-agent executable exists for this platform "
             f"(sys.platform={sys.platform!r}, machine={platform.machine()!r}); supported: "
-            "linux/macos on x64/arm64. " + _EXE_ACQUISITION_HINT
+            "linux/macos on x64/arm64, win on x64. " + _EXE_ACQUISITION_HINT
         )
     return f"{plat}-{arch}"
 

@@ -39,7 +39,7 @@ def _host_platform_tag() -> str:
     machine = platform.machine().lower()
     arch = "arm64" if machine in {"arm64", "aarch64"} else "x64" if machine in {"x86_64", "amd64"} else machine
     system = platform.system().lower()
-    key = f"macos-{arch}" if system == "darwin" else f"linux-{arch}" if system == "linux" else system
+    key = f"macos-{arch}" if system == "darwin" else f"linux-{arch}" if system == "linux" else f"win-{arch}" if system == "windows" else system
     try:
         return _PLATFORMS[key][0]
     except KeyError as exc:
@@ -76,6 +76,8 @@ class RuntimeBuildHook(BuildHookInterface):
                 f"runtime wheel {platform_tag} payload must be {expected_files}; found {found_files}"
             )
         for executable in runtime_files:
+            if executable.name.endswith(".exe"):
+                continue
             if executable.stat().st_mode & stat.S_IXUSR == 0:
                 raise RuntimeError(f"runtime executable is not executable: {executable}")
         build_data["pure_python"] = False

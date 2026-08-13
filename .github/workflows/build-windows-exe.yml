@@ -1,0 +1,27 @@
+name: Build Windows exe
+
+# Fork-only convenience: native windows-latest build of the pkg --sea
+# runtime, uploaded as a downloadable .exe artifact. Calls the shared
+# builder with node24-win-x64.
+on:
+  workflow_dispatch:
+  push:
+    branches: [windows-single-exe, master]
+    paths:
+      - '.github/workflows/build-windows-exe.yml'
+      - '.github/workflows/build-exe-for-python-sdk.yml'
+      - 'scripts/build-exe-for-python-sdk.ts'
+      - 'python/sdk-runtime/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: node24-win-x64
+    uses: ./.github/workflows/build-exe-for-python-sdk.yml
+    with:
+      targets: node24-win-x64
+      ci: true
